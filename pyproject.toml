@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flotorch-indexer"
-version = "2.3.0"
+version = "2.4.0"
 description = "A Python project for FloTorch"
 authors = [
     { name = "Shiva Krishna", email = "shiva.krishnaah@gmail.com" }
 ]
 license = { text = "MIT" }
 dependencies = [
-    "FloTorch-core==2.3.0"
+    "FloTorch-core==2.4.0"
 ]
 
 [project.optional-dependencies]
