@@ -109,7 +109,7 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
 
             retriever = Retriever(json_reader, embedding, vector_storage, inferencer, reranker)
             hierarchical = exp_config_data.get("chunking_strategy") == 'hierarchical'
-            result = retriever.retrieve(
+            result, total_input_tokens, total_output_tokens = retriever.retrieve(
                 gt_data_path, 
                 "What is the patient's name?",
                 int(exp_config_data.get("knn_num")), 
@@ -144,7 +144,8 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
             if len(batch_items) > 0:
                 write_batch_to_metrics_dynamodb(batch_items)
 
-            
+            experiment_id = exp_config_data.get("experiment_id")
+            update_tokens(experiment_id, total_input_tokens,total_output_tokens)
             output = {"status": "success", "message": "Retriever completed successfully."}
             self.send_task_success(output)
         except Exception as e:
@@ -159,7 +160,7 @@ def get_n_shot_prompt_guide_obj(execution_id) -> Optional[Dict]:
     db = DynamoDB(config.get_execution_table_name())
     data = db.read({"id": execution_id})
     if data:
-        n_shot_prompt_guide_obj = data.get("config", {}).get("n_shot_prompt_guide", None)
+        n_shot_prompt_guide_obj = data[0].get("config", {}).get("n_shot_prompt_guide", None)
         return n_shot_prompt_guide_obj
     return None
 
@@ -204,7 +205,17 @@ def create_metrics(
 
     return metrics
 
-
+def update_tokens(experiment_id, total_input_tokens, total_output_tokens):
+    experiment_db = DynamoDB(config.get_experiment_table_name())
+    inferencer_metadata = experiment_db.read({"id": experiment_id})[0].get("inferencer_metadata", {})
+    inferencer_metadata['input_tokens'] = total_input_tokens
+    inferencer_metadata['output_tokens'] = total_output_tokens
+    if experiment_db.update({"id": experiment_id}, {"inferencer_metadata": inferencer_metadata}):
+        logger.info(f"Updated tokens for experiment {experiment_id} successfully.")
+    else:
+        logger.error(f"Failed to update tokens for experiment {experiment_id}.")
+    
+    
 def write_batch_to_metrics_dynamodb(batch_items: List[Dict]) -> None:
     """Write a batch of items to DynamoDB."""
     logger.info(f"Writing batch of {len(batch_items)} items to DynamoDB")

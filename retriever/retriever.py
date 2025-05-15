@@ -55,6 +55,8 @@ class Retriever:
 
     def retrieve(self, path: str, query: str, knn: int, hierarchical: bool = False):
         result = []
+        total_input_tokens = 0
+        total_output_tokens = 0
         questions_list = self.json_reader.read_as_model(path, Question)
         for question in questions_list:
             question_chunk = question.get_chunk()
@@ -71,6 +73,8 @@ class Retriever:
                     answer_metadata = {}
                 else:
                     answer_metadata = metadata
+                    total_input_tokens += metadata['inputTokens']
+                    total_output_tokens += metadata['outputTokens']
             else:
                 answer = response.metadata['guardrail_output']
                 metadata = {}
@@ -91,6 +95,6 @@ class Retriever:
                 query_metadata=response.metadata['embedding_metadata'].to_json() if 'embedding_metadata' in response.metadata else None
             ))
 
-        return result
+        return result, total_input_tokens, total_output_tokens
             
             
