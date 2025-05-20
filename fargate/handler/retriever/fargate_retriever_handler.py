@@ -29,15 +29,21 @@ def get_environment_data():
     return task_token, input_data
 
 
+
 def main():
     """
     Main entry point for the Fargate retriever handler.
     """
     try:
-        task_token, input_data = get_environment_data()
+        # task_token, input_data = get_environment_data()
+
+        EXPERIMENT_ID = os.environ.get("EXPERIMENT_ID")
+        print(f"EXPERIMENT_ID: {EXPERIMENT_ID}")
+        EXECUTION_ID = os.environ.get("EXECUTION_ID")
+        print(f"EXECUTION_ID: {EXECUTION_ID}")
 
         # Initialize and process the RetrieverProcessor
-        fargate_processor = RetrieverProcessor(task_token=task_token, input_data=input_data)
+        fargate_processor = RetrieverProcessor(execution_id=EXECUTION_ID, experiment_id=EXPERIMENT_ID)
         fargate_processor.process()
     except Exception as e:
         logger.error(f"Error processing event: {str(e)}")

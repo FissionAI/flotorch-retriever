@@ -13,6 +13,7 @@ from flotorch_core.config.config import Config
 from flotorch_core.config.env_config_provider import EnvConfigProvider
 from flotorch_core.reader.json_reader import JSONReader
 from flotorch_core.rerank.rerank import BedrockReranker
+from flotorch_core.storage.db.postgresdb import PostgresDB
 from retriever.retriever import Retriever
 from flotorch_core.storage.db.dynamodb import DynamoDB
 from flotorch_core.storage.db.vector.guardrails_vector_storage import GuardRailsVectorStorage
@@ -39,10 +40,13 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
     def process(self):
         logger.info("Starting retriever process.")
         try:
-            exp_config_data = self.input_data
+            #exp_config_data = self.input_data
+            execution_id = self.execution_id
+            experiment_id = self.experiment_id
 
-            n_shot_prompt_guide_obj = get_n_shot_prompt_guide_obj(exp_config_data.get("execution_id"))
-            exp_config_data["n_shot_prompt_guide_obj"] = n_shot_prompt_guide_obj
+            exp_config_data = get_experiment_config(execution_id, experiment_id)
+            if not exp_config_data:
+                raise ValueError(f"Experiment configuration not found for execution_id: {execution_id} and experiment_id: {experiment_id}")
 
             logger.info(f"Into retriever processor. Processing event: {json.dumps(exp_config_data)}")
 
@@ -138,11 +142,11 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
 
                 batch_items.append(metrics)
                 if len(batch_items) >= 25:
-                    write_batch_to_metrics_dynamodb(batch_items)
+                    write_batch_to_metrics_db(batch_items)
                     batch_items = []
 
             if len(batch_items) > 0:
-                write_batch_to_metrics_dynamodb(batch_items)
+                write_batch_to_metrics_db(batch_items)
 
             
             output = {"status": "success", "message": "Retriever completed successfully."}
@@ -151,16 +155,27 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
             logger.error(f"Error during retriever process: {str(e)}")
             self.send_task_failure(str(e))
 
-# get n shot prompt guide object
-def get_n_shot_prompt_guide_obj(execution_id) -> Optional[Dict]:
+
+def get_experiment_config(execution_id, experiment_id) -> Dict:
     """
-    Retrieves the n-shot prompt guide object from the dynamo db.
+    Retrieves the experiment configuration from the dynamo db.
     """
-    db = DynamoDB(config.get_execution_table_name())
-    data = db.read({"id": execution_id})
+    db_type = config.get_db_type()
+    if db_type == "POSTGRESDB":
+        db = PostgresDB(
+            dbname=config.get_postgress_db(),
+            user=config.get_postgress_user(),
+            password=config.get_postgress_password(),
+            host=config.get_postgress_host(),
+            port=config.get_postgress_port()
+        )
+    else:
+        db = DynamoDB(config.get_experiment_table_name())
+        
+    data = db.read({"id": experiment_id, "execution_id": execution_id})
     if data:
-        n_shot_prompt_guide_obj = data.get("config", {}).get("n_shot_prompt_guide", None)
-        return n_shot_prompt_guide_obj
+        experiment_config = data.get("config", {})
+        return experiment_config
     return None
 
 # metrics: to be removed later
@@ -180,6 +195,15 @@ def create_metrics(
     guardrails_block_level: Optional[str] = '',
     guardrails_blocked: Optional[bool] = False
 ):
+    db_type = config.get_db_type()
+
+    if db_type == "POSTGRESDB":
+        query_metadata = json.dumps(query_metadata)
+        answer_metadata = json.dumps(answer_metadata)
+        guardrail_input_assessment = json.dumps(guardrail_input_assessment) if guardrail_input_assessment else None
+        guardrail_context_assessment = json.dumps(guardrail_context_assessment) if guardrail_context_assessment else None
+        guardrail_output_assessment = json.dumps(guardrail_output_assessment) if guardrail_output_assessment else None
+
     metrics = {
         "id": str(uuid.uuid4()),
         "timestamp": datetime.now().isoformat(),
@@ -204,9 +228,37 @@ def create_metrics(
 
     return metrics
 
+def write_batch_to_metrics_db(batch_items: List[Dict]) -> None:
+    """Write a batch of items to the appropriate database."""
+    db_type = config.get_db_type()
+
+    if db_type == "POSTGRESDB":
+        write_batch_to_metrics_postgres(batch_items)
+    elif db_type == "DYNAMODB":
+        write_batch_to_metrics_dynamodb(batch_items)
+    else:
+        logger.error(f"Unsupported database type: {db_type}")
+        raise ValueError(f"Unsupported database type: {db_type}")
 
 def write_batch_to_metrics_dynamodb(batch_items: List[Dict]) -> None:
     """Write a batch of items to DynamoDB."""
     logger.info(f"Writing batch of {len(batch_items)} items to DynamoDB")
     db = DynamoDB(config.get_experiment_question_metrics_table())
     db.bulk_write(batch_items)
+
+
+def write_batch_to_metrics_postgres(batch_items: List[Dict]) -> None:
+    """Write a batch of items to PostgreSQL."""
+    logger.info(f"Writing batch of {len(batch_items)} items to PostgreSQL")
+    
+    db = PostgresDB(
+        dbname=config.get_postgress_db(),
+        user=config.get_postgress_user(),
+        password=config.get_postgress_password(),
+        host=config.get_postgress_host(),
+        port=config.get_postgress_port()
+    )
+
+    db.bulk_write(batch_items, config.get_experiment_question_metrics_table())
+
+    db.close()
