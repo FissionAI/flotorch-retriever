@@ -64,8 +64,6 @@ class Retriever:
             vector_response = response.to_json()['result']
             
             if response.status:
-                if self.reranker:
-                    vector_response = self.reranker.rerank_documents(question_chunk.data, vector_response)
                 metadata, answer = self.inferencer.generate_text(question.question, vector_response)
                 guardrail_blocked = metadata['guardrail_blocked'] if 'guardrail_blocked' in metadata else False
                 if guardrail_blocked:

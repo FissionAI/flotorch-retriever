@@ -19,6 +19,7 @@ from flotorch_core.storage.db.vector.guardrails_vector_storage import GuardRails
 from flotorch_core.storage.db.vector.open_search import OpenSearchClient
 from flotorch_core.inferencer.bedrock_inferencer import BedrockInferencer
 from flotorch_core.storage.db.vector.vector_storage_factory import VectorStorageFactory
+from flotorch_core.storage.db.vector.reranked_vector_storage import RerankedVectorStorage
 from flotorch_core.storage.storage_provider_factory import StorageProviderFactory
 
 from flotorch_core.embedding.titanv2_embedding import TitanV2Embedding
@@ -90,7 +91,9 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
             reranker = BedrockReranker(exp_config_data.get("aws_region"), exp_config_data.get("rerank_model_id")) \
                 if exp_config_data.get("rerank_model_id").lower() != "none" \
                 else None
-            
+            if reranker:
+                vector_storage = RerankedVectorStorage(vector_storage, reranker)
+
             inferencer = InferencerProviderFactory.create_inferencer_provider(
                 exp_config_data.get("gateway_enabled", False),
                 f'{exp_config_data.get("gateway_url", "")}/api/openai/v1',
@@ -99,7 +102,7 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
                 exp_config_data.get("retrieval_model"), 
                 exp_config_data.get("aws_region"), 
                 config.get_sagemaker_arn_role(),
-                int(exp_config_data.get("n_shot_prompts", 0)), 
+                int(exp_config_data.get("n_shot_prompts", 0)),
                 float(exp_config_data.get("temp_retrieval_llm", 0)), 
                 exp_config_data.get("n_shot_prompt_guide_obj")
             )
