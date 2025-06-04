@@ -207,10 +207,11 @@ def create_metrics(
 
 def update_tokens(experiment_id, total_input_tokens, total_output_tokens):
     experiment_db = DynamoDB(config.get_experiment_table_name())
-    inferencer_metadata = experiment_db.read({"id": experiment_id}).get("inferencer_metadata", {})
-    inferencer_metadata['input_tokens'] = total_input_tokens
-    inferencer_metadata['output_tokens'] = total_output_tokens
-    if experiment_db.update({"id": experiment_id}, {"inferencer_metadata": inferencer_metadata}):
+    token_fields = {
+        "retrieval_input_tokens": total_input_tokens,
+        "retrieval_output_tokens": total_output_tokens
+    }
+    if experiment_db.update({"id": experiment_id}, token_fields):
         logger.info(f"Updated tokens for experiment {experiment_id} successfully.")
     else:
         logger.error(f"Failed to update tokens for experiment {experiment_id}.")
