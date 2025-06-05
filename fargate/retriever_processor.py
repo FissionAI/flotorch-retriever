@@ -157,11 +157,11 @@ class RetrieverProcessor(BaseFargateTaskProcessor):
 
                 batch_items.append(metrics)
                 if len(batch_items) >= 25:
-                    write_batch_to_metrics_db(batch_items, self.config_data)
+                    write_batch_to_metrics_db(batch_items, self.config_data, execution_id, experiment_id)
                     batch_items = []
 
             if len(batch_items) > 0:
-                write_batch_to_metrics_db(batch_items, self.config_data)
+                write_batch_to_metrics_db(batch_items, self.config_data, execution_id, experiment_id)
 
             output = {"status": "success", "message": "Retriever completed successfully."}
             self.send_task_success(output)
@@ -234,10 +234,10 @@ def create_metrics(
     return metrics
 
 
-def write_batch_to_metrics_db(batch_items: List[Dict], config_data) -> None:
+def write_batch_to_metrics_db(batch_items: List[Dict], config_data, execution_id, experiment_id) -> None:
     """Write a batch of items to the appropriate database."""
     if config_data:
-        write_batch_metrics_through_api(batch_items, config_data)
+        write_batch_metrics_through_api(batch_items, config_data, execution_id, experiment_id)
     else:
         db_type = config.get_db_type()
         if db_type == "POSTGRESDB":
@@ -272,7 +272,7 @@ def write_batch_to_metrics_postgres(batch_items: List[Dict]) -> None:
 
     db.close()
 
-def write_batch_metrics_through_api(metrics_list: List[Dict[str, Any]], config_data: dict) -> None:
+def write_batch_metrics_through_api(metrics_list: List[Dict[str, Any]], config_data: dict, project_uid, experiment_uid) -> None:
     """
     Transforms a list of metrics dictionaries into the required API payload format.
 
@@ -294,8 +294,6 @@ def write_batch_metrics_through_api(metrics_list: List[Dict[str, Any]], config_d
     )
     transformed_payload_list = [
         {
-            "execution_id": item_metrics.get("execution_id", ""),
-            "experiment_id": item_metrics.get("experiment_id", ""),
             "input": [{"type": "question", "content": item_metrics.get("question", "")}],
             "expected": [{"type": "answer", "content": item_metrics.get("gt_answer", "")}],
             "actual": [{"type": "answer", "content": item_metrics.get("generated_answer", "")}],
@@ -307,8 +305,11 @@ def write_batch_metrics_through_api(metrics_list: List[Dict[str, Any]], config_d
         }
         for item_metrics in metrics_list
     ]
-    write_metrics_api = config_data.get("console", {}).get("url", "").rstrip("/") + \
-                        config_data.get("console", {}).get("endpoints", {}).get("results", "")
+    if not project_uid or not experiment_uid:
+        logger.error("Missing projectUid or experimentUid in the first metrics item.")
+    base_url = config_data.get("console", {}).get("url", "").rstrip("/")
+    endpoint_path = config_data.get("console", {}).get("endpoints", {}).get("results", "")
+    write_metrics_api = f"{base_url}{endpoint_path}?projectUid={project_uid}&experimentUid={experiment_uid}"
     headers_data = config_data.get("console", {}).get("headers", {})
     logger.info(f"Writing batch of {len(metrics_list)} items to API: {write_metrics_api}")
     url_storage = StorageProviderFactory.create_storage_provider(write_metrics_api)
