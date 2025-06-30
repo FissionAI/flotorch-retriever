@@ -160,7 +160,7 @@ def get_n_shot_prompt_guide_obj(execution_id) -> Optional[Dict]:
     db = DynamoDB(config.get_execution_table_name())
     data = db.read({"id": execution_id})
     if data:
-        n_shot_prompt_guide_obj = data.get("config", {}).get("n_shot_prompt_guide", None)
+        n_shot_prompt_guide_obj = data[0].get("config", {}).get("n_shot_prompt_guide", None)
         return n_shot_prompt_guide_obj
     return None
 
